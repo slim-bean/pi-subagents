@@ -96,11 +96,13 @@ trusted projects. Every key is optional; edits apply on the next use.
 
 ### Models and credentials
 
-Each subagent process authenticates the way any pi process does. A provider
-whose key comes from a command (`"key": "!op read …"`) runs that command in
-every new subagent process, which can mean one secret-manager prompt per
-process. OAuth providers and keyless local models do not. Pick `model`
-accordingly if prompts would interrupt you.
+Each subagent process authenticates the way any pi process does. At startup pi
+runs the key command of **every** stored credential whose key is a command
+(`"key": "!op read …"`), whichever model is selected. So each new subagent
+process runs those commands, and a secret manager may prompt or stall, even
+when the subagent uses an OAuth or local model. pi's `--api-key` flag does not
+avoid this: the stored commands still run at startup. Credentials are not
+forwarded from the requester.
 
 ## How it works
 
