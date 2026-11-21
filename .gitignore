@@ -1,0 +1,21 @@
+# Allowlist: ignore everything at the root, then unignore intended project files.
+/*
+!/.gitignore
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/README.md
+!/AGENTS.md
+!/LICENSE
+!/src/
+!/test/
+
+# Never commit these, even inside allowed directories.
+node_modules/
+.env
+.env.*
+*.jsonl
+*.log
+*.pem
+*.key
+auth.json
