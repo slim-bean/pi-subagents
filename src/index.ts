@@ -38,7 +38,6 @@ export default function piSubagents(pi: ExtensionAPI) {
 	let ctx: ExtensionContext | undefined; // Valid from session_start until session_shutdown.
 	let identity: Identity | undefined;
 	let attached: Supervisor | undefined;
-	let toolsRegistered = false;
 	let notifyOverride: NotifyMode | undefined;
 	let problems: string[] = [];
 	let shownProblems = "";
@@ -88,6 +87,10 @@ export default function piSubagents(pi: ExtensionAPI) {
 	};
 
 	registerCommands(pi, host);
+	// Registered at load, not in session_start, so the tools exist before the first model call
+	// after a reload. Subagent sessions deactivate them (see startSubagent).
+	registerTools(pi, host);
+	const isOwnTool = (name: string) => name.startsWith("subagent_");
 
 	// ---- widget -----------------------------------------------------------
 
@@ -156,10 +159,6 @@ export default function piSubagents(pi: ExtensionAPI) {
 	// ---- roles ------------------------------------------------------------
 
 	const startRequester = (context: ExtensionContext) => {
-		if (!toolsRegistered) {
-			registerTools(pi, host);
-			toolsRegistered = true;
-		}
 		const sup = supervisor();
 		sup.configure(settings(context));
 		attach(sup);
@@ -173,6 +172,8 @@ export default function piSubagents(pi: ExtensionAPI) {
 
 	const startSubagent = (context: ExtensionContext, who: Identity) => {
 		readOnly = settings(context).readOnly;
+		// Subagents cannot nest: withdraw the tools from this session. The tool_call hook below backs this up.
+		pi.setActiveTools(pi.getActiveTools().filter((name) => !isOwnTool(name)));
 		if (context.hasUI) context.ui.setStatus(STATUS, `subagent ${who.id}`);
 		// A supervisor may already exist in this process (the person entered from a
 		// requester session): keep the widget and notifications for the others alive.
@@ -234,7 +235,9 @@ export default function piSubagents(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", (event, context) => {
-		if (!identity || !readOnly) return;
+		if (!identity) return;
+		if (isOwnTool(event.toolName)) return { block: true, reason: "Subagents cannot start or control other subagents." };
+		if (!readOnly) return;
 		const reason = refusal(event.toolName, event.input, context.cwd, identity);
 		if (reason) return { block: true, reason };
 	});

@@ -46,6 +46,9 @@ npm run test:fleet -- ~/projects/discussions/general   # after changing startup,
   unit-testable with `test/fixtures/fake-pi.mjs`.
 - **No side effects in the extension factory.** No processes, timers or files
   before `session_start`.
+- **Register tools and commands in the factory**, never in `session_start`: a
+  model call right after `/reload` can otherwise find the tools missing.
+  Subagent sessions deactivate the `subagent_*` tools and block calls to them.
 - **A report's usage is counted once**: only the caller for whom
   `Supervisor.claim()` returns true attaches `usage` to its tool result.
 - **Maintenance is disabled with the runtime-local `configure` operation.**
