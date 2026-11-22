@@ -22,13 +22,28 @@ directory. This is not a sandbox; see [Limits of the design](#limits-of-the-desi
 
 ## Install
 
-```bash
-cd ~/projects/pi-extensions/pi-subagents && npm install   # dev dependencies only
-pi install ~/projects/pi-extensions/pi-subagents            # or add the path to "packages"
+```sh
+pi install git:github.com/slim-bean/pi-subagents
 ```
 
-`/reload` running sessions. Install it globally (or wherever the requester
-loads it): subagent processes read the same settings and need the extension too.
+To pin this release, use `git:github.com/slim-bean/pi-subagents@v0.1.0`. Pinned
+refs do not move; select a new tag explicitly to upgrade. Run `/reload` in
+already-running sessions. To try it for one run without installing:
+
+```sh
+pi -e git:github.com/slim-bean/pi-subagents
+```
+
+Install it globally, not per project: subagent processes read the same
+settings as the session that starts them and need the extension too. Use only
+one installation source; remove a local-checkout entry before switching to the
+Git install, rather than loading both copies.
+
+Requires Node 22.19+ and macOS or Linux. There are no runtime dependencies and
+no build step. Developed and tested against pi 1.5.2.
+
+For development, clone the repository, run `npm install`, and register the
+checkout with `pi install .`.
 
 ## Use
 
@@ -112,9 +127,13 @@ subagent. Two steps:
    ```json
    "openai": {
      "type": "api_key",
-     "key": "!~/projects/pi-extensions/pi-subagents/bin/pi-subagent-key openai -- op read 'op://…'"
+     "key": "!/path/to/pi-subagents/bin/pi-subagent-key openai -- op read 'op://…'"
    }
    ```
+
+   `/subagents config` prints the helper's full path for your installation
+   (a Git install lives under `~/.pi/agent/git/`). If you later switch between
+   a Git install and a local checkout, update the path.
 
    The first argument must be the provider name the entry is stored under.
    For a command with pipes or `;`, wrap it: `-- sh -c '…'`.
@@ -209,7 +228,7 @@ like your own session files.
 npm run typecheck
 npm test              # unit tests; supervisor tests use a scripted stand-in for pi
 npm run test:pi       # end to end: real pi processes, scripted provider, no credentials
-npm run test:fleet -- ~/projects/discussions/general
+npm run test:fleet -- /path/to/a/project   # optional: also include that project's .pi/settings.json
 ```
 
 `test:fleet` loads the extensions named in your real settings (paths only) into
