@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodeCwd } from "../src/store.ts";
 import type { SubagentRecord } from "../src/types.ts";
@@ -37,6 +37,11 @@ function script(request: FakeRequest): FakeTurn {
 				? { text: "REPORT: wrapped up when asked" }
 				: { toolCalls: [{ name: "bash", arguments: { command: "echo working" } }] };
 		}
+		if (userText.includes("ENVPROBE")) {
+			return last.role === "tool"
+				? { text: `REPORT: ${contentText(last.content).slice(0, 600)}` }
+				: { toolCalls: [{ name: "bash", arguments: { command: 'env | grep -c sk-test-secret; echo "PIPES=$(ls "$PI_SUBAGENT_KEYS" 2>/dev/null | wc -l | tr -d " ")"' } }] };
+		}
 		if (userText.includes("WRITE")) {
 			return last.role === "tool"
 				? { text: `REPORT: write attempt said: ${contentText(last.content).slice(0, 300)}` }
@@ -55,10 +60,20 @@ function script(request: FakeRequest): FakeTurn {
 	return { text: "ok" };
 }
 
+const keyHelper = join(projectRoot, "bin", "pi-subagent-key");
+const SECRET = "sk-test-secret-0123456789";
 const h = await createHarness({
 	script,
 	withExtension: true,
-	subagents: { idleMinutes: 5 },
+	subagents: { idleMinutes: 5, forwardAuth: ["fake"] },
+	// A stored key that comes from a command, like a secret-manager lookup, wrapped with the helper.
+	// Each real run of the command is logged with who ran it.
+	auth: (home) => ({
+		fake: {
+			type: "api_key",
+			key: `!${keyHelper} fake -- sh -c 'echo run-\${PI_SUBAGENT_ID:-requester} >> ${join(home, "key-command.log")}; echo ${SECRET}'`,
+		},
+	}),
 	extensions: [join(projectRoot, "test", "fixtures", "maintenance-probe.ts")],
 });
 const probeLog = join(h.home, "maintenance-probe.log");
@@ -108,6 +123,14 @@ try {
 	const stats = await pi.request("get_session_stats");
 	assert.ok(stats.cost > 0.0012 * 2.5, `requester totals include the child's cost (got ${stats.cost})`);
 	step("blocking assignment returns a report, persists a linked session, and rolls up cost");
+
+	// ---- the requester's resolved key is handed to the subagent ----------------
+	const keyRuns = () => readFileSync(join(h.home, "key-command.log"), "utf8").trim().split("\n");
+	assert.equal(childRequest.authorization, `Bearer ${SECRET}`, "child authenticates with the requester's key");
+	assert.deepEqual(keyRuns(), ["run-requester"], "the key command ran once, in the requester only");
+	const keyDirs = () => readdirSync(join(h.home, "tmp")).filter((name) => name.startsWith("pi-subagent-keys-"));
+	assert.deepEqual(keyDirs(), [], "the handoff pipes are removed once the child has started");
+	step("subagent gets the requester's resolved API key without running the key command");
 
 	// ---- idle maintenance is switched off inside subagents only ------------
 	const probes = readFileSync(probeLog, "utf8").trim().split("\n").map((line) => JSON.parse(line));
@@ -228,6 +251,39 @@ try {
 	};
 	const children = childPids();
 	assert.ok(children.length >= 2, `expected live subagent processes before quitting, found ${children.length}`);
+
+	// ---- the key never leaks -----------------------------------------------------
+	assert.deepEqual(keyRuns(), ["run-requester"], "still one key command run after every subagent so far");
+	const visible = execFileSync("ps", ["eww", "-o", "command=", "-p", children.join(",")], { encoding: "utf8" });
+	assert.ok(!visible.includes(SECRET), "key is not in any subagent's arguments or environment");
+	const grep = (dir: string) => {
+		try {
+			return execFileSync("grep", ["-rl", SECRET, dir], { encoding: "utf8" }).trim();
+		} catch {
+			return ""; // grep exits 1 when nothing matches.
+		}
+	};
+	assert.equal(grep(join(h.agentDir, "subagents")), "", "key is not in the registry, reports or artifacts");
+	assert.equal(grep(join(h.agentDir, "sessions")), "", "key is not in any session file");
+	assert.ok(!JSON.stringify(pi.events).includes(SECRET), "key is not in any event or tool result");
+	// The background subagent started above may still be starting; its pipes go once it is ready.
+	for (let i = 0; i < 100 && keyDirs().length > 0; i++) await new Promise((resolve) => setTimeout(resolve, 100));
+	assert.deepEqual(keyDirs(), []);
+	step("the handed-over key is not in the process list, registry, sessions or tool results");
+
+	// The subagent's own shell cannot reach the key or a live pipe.
+	events = await pi.promptAndSettle('CALL subagent_run {"task":"ENVPROBE","title":"env probe"}');
+	out = lastToolText(events, "subagent_run");
+	assert.match(out, /PIPES=0/);
+	assert.ok(!out.includes(SECRET));
+	step("a subagent's shell finds no key and no pipe");
+
+	// With forwarding off, a new subagent process resolves the key itself.
+	writeFileSync(join(h.agentDir, "subagents.json"), JSON.stringify({ forwardAuth: [] }));
+	events = await pi.promptAndSettle('CALL subagent_run {"task":"Investigate without forwarding","title":"own auth"}');
+	assert.match(lastToolText(events, "subagent_run"), /s9 "own auth" · completed/);
+	assert.deepEqual(keyRuns(), ["run-requester", "run-s9"], "the child ran the key command itself");
+	step("with forwardAuth empty the child resolves its own key");
 	await pi.stop();
 	assert.deepEqual(children.filter(alive), [], "no subagent process survives the requester");
 	assert.equal(record("s7").assignments[0]!.outcome, "stopped");

@@ -1,7 +1,9 @@
 /** `/subagents`: the human's view of, and controls for, subagents. */
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { forwardedKeys } from "./auth.ts";
 import { formatCost, formatDuration, formatLimits, oneLine, outcomeLabel, snapshotLine } from "./format.ts";
 import { assignmentMessage } from "./prompt.ts";
 import { normalizeId } from "./store.ts";
@@ -19,6 +21,9 @@ export interface CommandHost {
 	cwd(): string | undefined;
 	setNotify(mode: NotifyMode): void;
 }
+
+/** Wrapper for auth.json key commands; see README "Models and credentials". */
+const KEY_HELPER = fileURLToPath(new URL("../bin/pi-subagent-key", import.meta.url));
 
 const SUBCOMMANDS = ["list", "enter", "return", "logs", "send", "stop", "stopall", "notify", "forget", "config"] as const;
 const TAKES_ID = new Set(["enter", "logs", "send", "stop", "forget"]);
@@ -165,7 +170,9 @@ export function registerCommands(pi: ExtensionAPI, host: CommandHost): void {
 				return;
 			}
 			const settings = host.settings(ctx);
+			const keys = await forwardedKeys(ctx, settings.forwardAuth);
 			const started = supervisor.start(ref, {
+				keys,
 				task: message,
 				message: assignmentMessage(message, snapshot.assignments + 1, settings.limits),
 				requester: { sessionId: ctx.sessionManager.getSessionId(), sessionFile: ctx.sessionManager.getSessionFile() },
@@ -290,6 +297,7 @@ export function registerCommands(pi: ExtensionAPI, host: CommandHost): void {
 						`idle process kept for: ${settings.idleMinutes} min`,
 						`report cap: ${settings.reportMaxChars} chars`,
 						`notify: ${settings.notify}`,
+						`keys handed to subagents: ${settings.forwardAuth.join(", ") || "none"} (helper: ${KEY_HELPER})`,
 						`subagent file tools: ${settings.readOnly ? "research-only (own directory and temp)" : "unrestricted"}`,
 						...host.problems().map((problem) => `problem: ${problem}`),
 					];

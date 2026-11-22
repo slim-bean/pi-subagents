@@ -50,8 +50,13 @@ npm run test:fleet -- ~/projects/discussions/general   # after changing startup,
   `Supervisor.claim()` returns true attaches `usage` to its tool result.
 - **Maintenance is disabled with the runtime-local `configure` operation.**
   `suspend` is workspace-wide and would pause the user's own sessions.
-- **Do not forward credentials to children** without the user's explicit
-  decision. Children authenticate like any pi process.
+- **Keys reach children only through the one-shot pipe handoff** (`handoff.ts`,
+  `bin/pi-subagent-key`), and only for providers in `forwardAuth`. Never put a
+  key in a child's environment or arguments (pi's `--api-key` does not stop the
+  stored key commands running at startup anyway), in the registry, or in any
+  message. Do not print key values while debugging. `npm run test:pi` fails if
+  the test key appears in the process list, registry, sessions or tool results.
+- **Never edit the user's `auth.json`.** Give them the lines to paste.
 - The file-tool guard (`guard.ts`) is a safety net, not a security boundary.
   Do not describe subagents as sandboxed or read-only.
 

@@ -9,6 +9,7 @@
   ],
   "files": [
     "src",
+    "bin",
     "README.md",
     "LICENSE"
   ],

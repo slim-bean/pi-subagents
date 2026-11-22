@@ -3,6 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
+import { forwardedKeys } from "./auth.ts";
 import { THINKING_LEVELS } from "./config.ts";
 import { formatCost, formatDuration, oneLine, outcomeLabel, resultHeadline, snapshotLine, titleFromTask } from "./format.ts";
 import { assignmentMessage } from "./prompt.ts";
@@ -306,7 +307,9 @@ export function registerTools(pi: ExtensionAPI, host: ToolHost): void {
 				maxCostUsd: limit(params.maxCostUsd, settings.limits.maxCostUsd),
 			};
 			const n = (supervisor.snapshot(ref)?.assignments ?? 0) + 1;
+			const keys = await forwardedKeys(ctx, settings.forwardAuth);
 			const started = supervisor.start(ref, {
+				keys,
 				task: params.task,
 				message: assignmentMessage(params.task, n, limits),
 				requester,

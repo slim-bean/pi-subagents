@@ -187,6 +187,12 @@ test("settings: valid values apply, invalid ones are reported and ignored", () =
 	]);
 	assert.deepEqual(DEFAULT_SETTINGS.limits, { maxTurns: 80, maxMinutes: 45, maxCostUsd: 5 }, "defaults are not mutated");
 
+	const auth: string[] = [];
+	assert.deepEqual(applySettings({ forwardAuth: ["openai", "anthropic-apikey"] }, DEFAULT_SETTINGS, "a", auth).forwardAuth, ["openai", "anthropic-apikey"]);
+	assert.deepEqual(applySettings({ forwardAuth: ["../x"] }, DEFAULT_SETTINGS, "a", auth).forwardAuth, []);
+	assert.deepEqual(applySettings({ forwardAuth: true }, DEFAULT_SETTINGS, "a", auth).forwardAuth, []);
+	assert.equal(auth.length, 2);
+
 	const more: string[] = [];
 	applySettings({ model: "no-slash", thinking: "ultra", notify: "loud", limits: 3 }, DEFAULT_SETTINGS, "x", more);
 	assert.equal(more.length, 4);
@@ -296,6 +302,10 @@ test("launcher: resumes the session, mirrors trust, pins the model, and marks th
 		assert.equal(first.env.PI_INSTANCE_LABEL, sessionName("s4", "probe"));
 		assert.equal(first.env.PI_INSTANCE_TITLE, "0");
 		assert.equal(first.env.PI_SESSION_FILE, undefined, "stale requester session metadata is not inherited");
+		process.env.PI_SUBAGENT_KEYS = "/stale/keys";
+		assert.equal(launch({ record: base, trusted: false, keyDir: "/tmp/keys-1" }).env.PI_SUBAGENT_KEYS, "/tmp/keys-1");
+		assert.equal(launch({ record: base, trusted: false }).env.PI_SUBAGENT_KEYS, undefined, "no stale handoff directory is inherited");
+		delete process.env.PI_SUBAGENT_KEYS;
 		const untrusted = launch({ record: base, trusted: false });
 		assert.deepEqual(untrusted.args, ["/pi/cli.js", "--mode", "rpc", "--session", "/sessions/a.jsonl", "--no-approve"]);
 	} finally {

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import type { RpcLaunch } from "./rpc.ts";
 import type { Launcher } from "./supervisor.ts";
+import { ENV_KEY_DIR } from "./handoff.ts";
 import type { Store } from "./store.ts";
 
 /** Set in every subagent process so other extensions can tell they run inside one. */
@@ -30,13 +31,15 @@ export function sessionName(id: string, title: string): string {
 }
 
 export function makeLauncher(store: Store, invocation: () => { command: string; prefix: string[] } = piInvocation): Launcher {
-	return ({ record, trusted }): RpcLaunch => {
+	return ({ record, trusted, keyDir }): RpcLaunch => {
 		const { command, prefix } = invocation();
 		const args = [...prefix, "--mode", "rpc", "--session", record.sessionFile, trusted ? "--approve" : "--no-approve"];
 		if (record.model) args.push("--model", record.model);
 		if (record.thinking) args.push("--thinking", record.thinking);
 		const env: NodeJS.ProcessEnv = { ...process.env };
 		for (const name of STALE_ENV) delete env[name];
+		delete env[ENV_KEY_DIR];
+		if (keyDir) env[ENV_KEY_DIR] = keyDir;
 		env[ENV_SUBAGENT_ID] = record.id;
 		env[ENV_SUBAGENT_DIR] = store.dir(record.cwd, record.id);
 		// pi-instances: show the subagent under its own name, and never push a terminal title.

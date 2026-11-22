@@ -1,0 +1,28 @@
+#!/bin/sh
+# Key command wrapper for pi's auth.json:
+#
+#   "key": "!/path/to/pi-subagent-key <provider> -- <command that prints the key>"
+#
+# Inside a subagent process started by pi-subagents, the requesting pi hands the
+# already-resolved key over through a one-shot named pipe, so the command (and
+# any secret-manager prompt) is skipped. Everywhere else the pipe does not
+# exist and the command runs exactly as before.
+provider=${1:-}
+[ $# -gt 0 ] && shift
+[ "${1:-}" = "--" ] && shift
+
+case "$provider" in
+	"" | *[!A-Za-z0-9._-]*) ;;
+	*)
+		pipe="${PI_SUBAGENT_KEYS:-}/$provider"
+		if [ -n "${PI_SUBAGENT_KEYS:-}" ] && [ -p "$pipe" ]; then
+			if IFS= read -r key < "$pipe" && [ -n "$key" ]; then
+				printf '%s' "$key"
+				exit 0
+			fi
+		fi
+		;;
+esac
+
+[ $# -gt 0 ] || exit 1
+exec "$@"

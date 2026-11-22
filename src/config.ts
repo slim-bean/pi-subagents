@@ -63,6 +63,11 @@ export function applySettings(raw: unknown, base: Settings, source: string, prob
 				if (typeof value === "boolean") next.readOnly = value;
 				else problems.push(`${source}: "readOnly" must be true or false`);
 				break;
+			case "forwardAuth":
+				if (Array.isArray(value) && value.every((item) => typeof item === "string" && /^[A-Za-z0-9._-]+$/.test(item))) {
+					next.forwardAuth = [...value];
+				} else problems.push(`${source}: "forwardAuth" must be a list of provider names`);
+				break;
 			case "limits":
 				if (!isObject(value)) {
 					problems.push(`${source}: "limits" must be an object`);

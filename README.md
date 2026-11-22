@@ -82,7 +82,8 @@ trusted projects. Every key is optional; edits apply on the next use.
   "limits": { "maxTurns": 80, "maxMinutes": 45, "maxCostUsd": 5 },
   "reportMaxChars": 20000,
   "notify": "interrupt",
-  "readOnly": true
+  "readOnly": true,
+  "forwardAuth": []
 }
 ```
 
@@ -100,9 +101,42 @@ Each subagent process authenticates the way any pi process does. At startup pi
 runs the key command of **every** stored credential whose key is a command
 (`"key": "!op read …"`), whichever model is selected. So each new subagent
 process runs those commands, and a secret manager may prompt or stall, even
-when the subagent uses an OAuth or local model. pi's `--api-key` flag does not
-avoid this: the stored commands still run at startup. Credentials are not
-forwarded from the requester.
+when the subagent uses an OAuth or local model.
+
+To avoid that, let the requesting pi hand its already-resolved keys to the
+subagent. Two steps:
+
+1. In `~/.pi/agent/auth.json`, put the helper in front of each key command.
+   Everything after `--` is your existing command, unchanged:
+
+   ```json
+   "openai": {
+     "type": "api_key",
+     "key": "!~/projects/pi-extensions/pi-subagents/bin/pi-subagent-key openai -- op read 'op://…'"
+   }
+   ```
+
+   The first argument must be the provider name the entry is stored under.
+   For a command with pipes or `;`, wrap it: `-- sh -c '…'`.
+
+2. List those providers in `subagents.json`:
+
+   ```json
+   { "forwardAuth": ["openai", "anthropic-apikey"] }
+   ```
+
+How it works: when a subagent process starts, the requester puts each listed
+key into a one-shot named pipe in a private temp directory and tells the child
+where it is (`PI_SUBAGENT_KEYS`). The helper reads the key from the pipe
+instead of running your command. Once the child has started, the pipes are
+removed. Outside a subagent the helper finds no pipe and runs your command as
+before, so your own pi sessions are unaffected.
+
+The key is never in the child's environment or arguments, in a regular file,
+or in a session, report or tool result. It can be read once, during startup,
+before the subagent runs any tool. `/subagents config` shows the helper path
+and the forwarded providers. List only API-key providers, not OAuth ones.
+If the handoff fails for any reason, the child falls back to your command.
 
 ## How it works
 
@@ -195,5 +229,8 @@ src/
   tools.ts       subagent_* tools          commands.ts   /subagents
   prompt.ts      research instructions     report.ts     what the requester sees
   guard.ts       research-only file-tool guard
+  auth.ts        collects resolved keys    handoff.ts    one-shot key pipes
+bin/
+  pi-subagent-key  key-command wrapper for auth.json
   config.ts      settings                  format.ts, role.ts, types.ts
 ```

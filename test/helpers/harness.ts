@@ -48,6 +48,8 @@ export interface HarnessOptions {
 	withExtension?: boolean;
 	/** `<agent dir>/subagents.json` content. */
 	subagents?: Record<string, unknown>;
+	/** auth.json content, built from the temporary HOME. Default: empty. */
+	auth?: (home: string) => Record<string, unknown>;
 	/** Extra extension files to load after the extension under test. */
 	extensions?: string[];
 }
@@ -63,7 +65,7 @@ export async function createHarness(options: HarnessOptions): Promise<Harness> {
 	mkdirSync(project, { recursive: true });
 	mkdirSync(temp, { recursive: true });
 	const provider = await startFakeProvider(options.script);
-	writeFileSync(join(agentDir, "auth.json"), "{}\n", { mode: 0o600 });
+	writeFileSync(join(agentDir, "auth.json"), `${JSON.stringify(options.auth?.(home) ?? {})}\n`, { mode: 0o600 });
 	writeFileSync(
 		join(agentDir, "models.json"),
 		JSON.stringify({

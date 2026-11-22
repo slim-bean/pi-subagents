@@ -15,6 +15,7 @@ import { EventEmitter } from "node:events";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatToolCall, oneLine } from "./format.ts";
+import { createHandoff } from "./handoff.ts";
 import { type RpcExit, type RpcLaunch, RpcProcess, type RpcRecord } from "./rpc.ts";
 import type { Store } from "./store.ts";
 import {
@@ -34,7 +35,7 @@ import {
 } from "./types.ts";
 
 /** Bump when the shape used by extension instances changes; see getSupervisor. */
-export const SUPERVISOR_API = 1;
+export const SUPERVISOR_API = 2;
 
 const ACTIVITY_LINES = 200;
 const TASK_RECORD_CHARS = 4000;
@@ -44,6 +45,8 @@ const SOFT_LIMIT = 0.8;
 export interface LaunchRequest {
 	record: SubagentRecord;
 	trusted: boolean;
+	/** Directory of one-shot key pipes for this launch; see handoff.ts. */
+	keyDir?: string;
 }
 export type Launcher = (request: LaunchRequest) => RpcLaunch;
 
@@ -80,6 +83,8 @@ export interface StartRequest {
 	/** Switch the subagent to this model before the assignment. */
 	model?: string;
 	thinking?: string;
+	/** Already-resolved API keys by provider, handed to the process if one must be started. Memory only. */
+	keys?: Record<string, string>;
 }
 
 export interface Started {
@@ -131,6 +136,8 @@ interface Runtime {
 	lastActivity?: string;
 	/** Model/thinking changed since the process started; apply over RPC before the next prompt. */
 	modelDirty: boolean;
+	/** Keys for the next launch. Memory only; cleared once a process has started. */
+	keys?: Record<string, string>;
 }
 
 function keyOf(ref: SubagentRef): string {
@@ -281,6 +288,7 @@ export class Supervisor extends EventEmitter {
 		// Another pi process may have used this subagent since we cached its record.
 		if (!rt.proc?.alive) rt.record = this.store.load(ref.cwd, ref.id) ?? rt.record;
 		const record = rt.record;
+		rt.keys = request.keys;
 		if ((request.model && request.model !== record.model) || (request.thinking && request.thinking !== record.thinking)) {
 			record.model = request.model ?? record.model;
 			record.thinking = request.thinking ?? record.thinking;
@@ -445,7 +453,9 @@ export class Supervisor extends EventEmitter {
 		}
 		const lock = this.store.acquireLock(rt.ref.cwd, rt.ref.id, "child");
 		if (!lock.ok) throw new Error(`${rt.ref.id} is in use by another pi process (pid ${lock.owner.pid}).`);
-		const launch = this.launcher({ record: rt.record, trusted });
+		const handoff = rt.keys ? createHandoff(rt.keys) : undefined;
+		rt.keys = undefined;
+		const launch = this.launcher({ record: rt.record, trusted, keyDir: handoff?.dir });
 		const proc: RpcProcess = new RpcProcess(launch, {
 			onEvent: (event) => this.onEvent(rt, event),
 			onDialog: (request) => {
@@ -481,6 +491,9 @@ export class Supervisor extends EventEmitter {
 		} catch (error) {
 			await proc.shutdown(2000);
 			throw new Error(`could not start the subagent process: ${(error as Error).message}`);
+		} finally {
+			// pi has run its key commands by the time it answers; the pipes are no longer needed.
+			handoff?.dispose();
 		}
 		return proc;
 	}

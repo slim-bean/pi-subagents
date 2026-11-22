@@ -144,6 +144,8 @@ export interface Settings {
 	startTimeoutSeconds: number;
 	/** Limit a subagent's write/edit tools to its own directory and the temp directory. */
 	readOnly: boolean;
+	/** Providers whose already-resolved API key is handed to subagent processes at startup. */
+	forwardAuth: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -154,4 +156,5 @@ export const DEFAULT_SETTINGS: Settings = {
 	notify: "interrupt",
 	startTimeoutSeconds: 90,
 	readOnly: true,
+	forwardAuth: [],
 };

@@ -8,6 +8,7 @@
 !/AGENTS.md
 !/LICENSE
 !/src/
+!/bin/
 !/test/
 
 # Never commit these, even inside allowed directories.

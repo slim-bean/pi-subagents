@@ -16,6 +16,8 @@ export interface FakeRequest {
 	/** The last message in the request (often a tool result). */
 	last: Record<string, any>;
 	toolNames: string[];
+	/** Authorization header as received. */
+	authorization: string;
 }
 
 export interface FakeTurn {
@@ -65,6 +67,7 @@ export async function startFakeProvider(script: FakeScript): Promise<FakeProvide
 				.join("\n"),
 			lastUser: textOf(users[users.length - 1]?.content),
 			last: messages[messages.length - 1] ?? {},
+			authorization: String(req.headers.authorization ?? ""),
 			toolNames: (body.tools ?? []).map((tool: any) => tool.function?.name ?? tool.name),
 		};
 		requests.push(request);
