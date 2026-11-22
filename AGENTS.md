@@ -59,7 +59,8 @@ npm run test:fleet -- ~/projects/discussions/general   # after changing startup,
   stored key commands running at startup anyway), in the registry, or in any
   message. Do not print key values while debugging. `npm run test:pi` fails if
   the test key appears in the process list, registry, sessions or tool results.
-- **Never edit the user's `auth.json`.** Give them the lines to paste.
+- **Do not edit the user's `auth.json` unless they ask.** Back it up first, keep
+  mode 0600, and never print its values.
 - The file-tool guard (`guard.ts`) is a safety net, not a security boundary.
   Do not describe subagents as sandboxed or read-only.
 
