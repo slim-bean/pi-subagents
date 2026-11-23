@@ -74,7 +74,7 @@ structured results there. The model drills into a transcript with
 /subagents stopall             abort every running assignment in this project
 /subagents notify [mode]       how finished background work reaches the agent: interrupt | next | off
 /subagents forget <id>         remove it from the list (its session file is kept)
-/subagents config              show effective settings
+/subagents settings            view and change settings (saved to subagents.json)
 ```
 
 Running subagents appear in a widget above the editor. Esc during a waiting
@@ -87,6 +87,11 @@ can re-engage any of its subagents.
 
 `~/.pi/agent/subagents.json`, overridden by `<project>/.pi/subagents.json` in
 trusted projects. Every key is optional; edits apply on the next use.
+
+`/subagents settings` opens a menu of these settings. Picking one changes it
+and saves it at once, to the global file or, after switching the target in the
+menu, to the project file. It then prints the effective settings. You can also
+edit the files by hand:
 
 ```json
 {
@@ -131,7 +136,7 @@ subagent. Two steps:
    }
    ```
 
-   `/subagents config` prints the helper's full path for your installation
+   `/subagents settings` prints the helper's full path for your installation
    (a Git install lives under `~/.pi/agent/git/`). If you later switch between
    a Git install and a local checkout, update the path.
 
@@ -153,7 +158,7 @@ before, so your own pi sessions are unaffected.
 
 The key is never in the child's environment or arguments, in a regular file,
 or in a session, report or tool result. It can be read once, during startup,
-before the subagent runs any tool. `/subagents config` shows the helper path
+before the subagent runs any tool. `/subagents settings` shows the helper path
 and the forwarded providers. List only API-key providers, not OAuth ones.
 If the handoff fails for any reason, the child falls back to your command.
 
@@ -251,5 +256,6 @@ src/
   auth.ts        collects resolved keys    handoff.ts    one-shot key pipes
 bin/
   pi-subagent-key  key-command wrapper for auth.json
-  config.ts      settings                  format.ts, role.ts, types.ts
+  config.ts      settings files            settings-editor.ts  /subagents settings menu
+  format.ts, role.ts, types.ts
 ```

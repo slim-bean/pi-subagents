@@ -96,6 +96,11 @@ try {
 	const state = await pi.request("get_state", {}, 60_000);
 	const commands = await pi.request("get_commands");
 	assert.ok(commands.commands.some((c: any) => c.name === "subagents"), "/subagents is registered");
+	// Nobody answers the settings menu here, so the command falls through to printing the settings.
+	await pi.promptAndSettle("/subagents settings");
+	const shown = pi.ui.filter((u) => u.method === "notify").map((u) => String(u.message)).pop() ?? "";
+	assert.match(shown, /model: \(the requesting session's model\)/);
+	assert.match(shown, /keys handed to subagents: fake/);
 	step("extension loads in the requester");
 
 	// ---- blocking assignment --------------------------------------------

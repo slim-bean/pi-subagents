@@ -81,7 +81,7 @@ export default function piSubagents(pi: ExtensionAPI) {
 		problems: () => problems,
 		identity: () => identity,
 		cwd: () => ctx?.cwd,
-		setNotify: (mode: NotifyMode) => {
+		setNotify: (mode: NotifyMode | undefined) => {
 			notifyOverride = mode;
 		},
 	};

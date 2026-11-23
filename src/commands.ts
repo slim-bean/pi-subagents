@@ -1,11 +1,13 @@
 /** `/subagents`: the human's view of, and controls for, subagents. */
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { forwardedKeys } from "./auth.ts";
 import { formatCost, formatDuration, formatLimits, oneLine, outcomeLabel, snapshotLine } from "./format.ts";
 import { assignmentMessage } from "./prompt.ts";
+import { editSettings } from "./settings-editor.ts";
 import { normalizeId } from "./store.ts";
 import type { Supervisor } from "./supervisor.ts";
 import { type Identity, NOTICE_TYPE, type NotifyMode, type Settings, type Snapshot, type SubagentRef } from "./types.ts";
@@ -19,13 +21,14 @@ export interface CommandHost {
 	identity(): Identity | undefined;
 	/** Working directory of the current session, for completions. */
 	cwd(): string | undefined;
-	setNotify(mode: NotifyMode): void;
+	/** Session-only override of the notify setting; undefined clears it. */
+	setNotify(mode: NotifyMode | undefined): void;
 }
 
 /** Wrapper for auth.json key commands; see README "Models and credentials". */
 const KEY_HELPER = fileURLToPath(new URL("../bin/pi-subagent-key", import.meta.url));
 
-const SUBCOMMANDS = ["list", "enter", "return", "logs", "send", "stop", "stopall", "notify", "forget", "config"] as const;
+const SUBCOMMANDS = ["list", "enter", "return", "logs", "send", "stop", "stopall", "notify", "forget", "settings"] as const;
 const TAKES_ID = new Set(["enter", "logs", "send", "stop", "forget"]);
 const NOTIFY_MODES: NotifyMode[] = ["interrupt", "next", "off"];
 
@@ -38,7 +41,7 @@ const USAGE = `/subagents                     list this project's subagents
 /subagents stopall             abort every running assignment in this project
 /subagents notify [mode]       how finished background work reaches the agent: interrupt | next | off
 /subagents forget <id>         remove it from the list (its session file is kept)
-/subagents config              show effective settings`;
+/subagents settings            view and change settings (saved to subagents.json)`;
 
 function describe(snapshot: Snapshot): string {
 	const assignment = snapshot.assignment;
@@ -287,7 +290,16 @@ export function registerCommands(pi: ExtensionAPI, host: CommandHost): void {
 					ctx.ui.notify(`${ref.id} forgotten. Its session remains at ${snapshot.sessionFile}`, "info");
 					return;
 				}
-				case "config": {
+				case "settings": {
+					if (ctx.hasUI) {
+						const changed = await editSettings(ctx.ui, {
+							agentDir: getAgentDir(),
+							projectDir: ctx.isProjectTrusted() ? join(ctx.cwd, CONFIG_DIR_NAME) : undefined,
+							models: [...new Set(ctx.modelRegistry.getAvailable().map((model) => `${model.provider}/${model.id}`))].sort(),
+						});
+						// A saved notify choice replaces an earlier `/subagents notify` for this session.
+						if (changed.has("notify")) host.setNotify(undefined);
+					}
 					const settings = host.settings(ctx);
 					const lines = [
 						`model: ${settings.model ?? "(the requesting session's model)"}`,

@@ -2,8 +2,8 @@
  * Settings: `<agent dir>/subagents.json`, overridden per project by
  * `<cwd>/.pi/subagents.json` when the project is trusted. All keys optional.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { DEFAULT_SETTINGS, type Settings } from "./types.ts";
 
 export const CONFIG_FILE = "subagents.json";
@@ -112,4 +112,55 @@ export function loadSettings(agentDir: string, projectConfigDir: string | undefi
 		if (raw !== undefined) settings = applySettings(raw, settings, file, problems);
 	}
 	return { settings, problems };
+}
+
+/** Raw content of one settings file. A missing file is an empty object; unreadable JSON is an error. */
+export function readSettingsFile(file: string): { raw: Record<string, unknown> } | { error: string } {
+	let text: string;
+	try {
+		text = readFileSync(file, "utf8");
+	} catch {
+		return { raw: {} };
+	}
+	try {
+		const raw = JSON.parse(text);
+		return isObject(raw) ? { raw } : { error: `${file}: expected a JSON object` };
+	} catch (error) {
+		return { error: `${file}: ${(error as Error).message}` };
+	}
+}
+
+/**
+ * Set (or with `undefined`, remove) one setting in a settings file, keeping every
+ * other key as it is. `path` is a top-level key or ["limits", name]. Returns a
+ * problem description instead of writing when the value is invalid.
+ */
+export function updateSettingsFile(file: string, path: string[], value: unknown): string | undefined {
+	const [key, sub] = path;
+	if (!key) return "no setting named";
+	if (value !== undefined) {
+		const problems: string[] = [];
+		applySettings(sub ? { [key]: { [sub]: value } } : { [key]: value }, DEFAULT_SETTINGS, "value", problems);
+		if (problems.length > 0) return problems[0]!.replace(/^value: /, "");
+	}
+	const current = readSettingsFile(file);
+	if ("error" in current) return `${current.error}. Fix or remove the file first.`;
+	const raw = current.raw;
+	if (sub) {
+		const group = isObject(raw[key]) ? { ...(raw[key] as Record<string, unknown>) } : {};
+		if (value === undefined) delete group[sub];
+		else group[sub] = value;
+		if (Object.keys(group).length > 0) raw[key] = group;
+		else delete raw[key];
+	} else if (value === undefined) delete raw[key];
+	else raw[key] = value;
+	try {
+		mkdirSync(dirname(file), { recursive: true });
+		const temp = `${file}.${process.pid}.tmp`;
+		writeFileSync(temp, `${JSON.stringify(raw, null, 2)}\n`);
+		renameSync(temp, file);
+	} catch (error) {
+		return `could not write ${file}: ${(error as Error).message}`;
+	}
+	return undefined;
 }
