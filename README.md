@@ -26,7 +26,7 @@ directory. This is not a sandbox; see [Limits of the design](#limits-of-the-desi
 pi install git:github.com/slim-bean/pi-subagents
 ```
 
-To pin this release, use `git:github.com/slim-bean/pi-subagents@v0.1.0`. Pinned
+To pin this release, use `git:github.com/slim-bean/pi-subagents@v0.2.0`. Pinned
 refs do not move; select a new tag explicitly to upgrade. Run `/reload` in
 already-running sessions. To try it for one run without installing:
 
