@@ -1,6 +1,6 @@
 {
   "name": "pi-subagents",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Persistent research subagents for pi: delegate investigations to child pi sessions that you can re-engage, inspect, and enter.",
   "type": "module",

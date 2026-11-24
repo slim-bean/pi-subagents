@@ -193,7 +193,7 @@ export function registerCommands(pi: ExtensionAPI, host: CommandHost): void {
 	pi.registerCommand("subagents", {
 		description: "List and control research subagents (enter, return, logs, send, stop)",
 		getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
-			const parts = prefix.split(/\s+/);
+			const parts = prefix.trimStart().split(/\s+/);
 			if (parts.length <= 1) {
 				const items = SUBCOMMANDS.filter((name) => name.startsWith(parts[0] ?? "")).map((name) => ({ value: name, label: name }));
 				return items.length > 0 ? items : null;
