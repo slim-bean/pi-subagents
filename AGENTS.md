@@ -51,6 +51,8 @@ npm run test:fleet -- ~/projects/discussions/general   # after changing startup,
   Subagent sessions deactivate the `subagent_*` tools and block calls to them.
 - **A report's usage is counted once**: only the caller for whom
   `Supervisor.claim()` returns true attaches `usage` to its tool result.
+- **Do not queue model-facing completion notices in pi while busy.** Re-check
+  the assignment number and collection state before handing a notice to pi.
 - **Maintenance is disabled with the runtime-local `configure` operation.**
   `suspend` is workspace-wide and would pause the user's own sessions.
 - **Keys reach children only through the one-shot pipe handoff** (`handoff.ts`,

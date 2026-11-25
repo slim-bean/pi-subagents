@@ -80,6 +80,12 @@ structured results there. The model drills into a transcript with
 Running subagents appear in a widget above the editor. Esc during a waiting
 `subagent_run` stops that assignment; background assignments keep going.
 
+Background completions are shown in the UI. For model-facing notices,
+`interrupt` (the default) wakes the requester once it is idle, `next` adds a
+notice to the next user prompt, and `off` sends no notice to the model. Pending
+notices are combined at delivery and reports already returned by
+`subagent_wait` are omitted.
+
 Ids (`s1`, `s2`, …) are per project directory, and any session in that project
 can re-engage any of its subagents.
 
@@ -187,7 +193,7 @@ subagent processes; nothing runs or spends unattended.
   running subagent's session through `/resume` in another pi is still unsafe.
 - **Survival.** Subagents keep working across `/reload` and session switches in
   the requesting pi. Reports that finish while their requester session is not
-  active are announced when it is next opened.
+  active can be announced on the next user prompt after reopening it.
 - **Dialogs.** Nobody answers a subagent's extension dialogs; they are
   cancelled and noted in its activity log.
 

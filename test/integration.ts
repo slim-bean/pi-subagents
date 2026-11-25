@@ -49,12 +49,14 @@ function script(request: FakeRequest): FakeTurn {
 		}
 		if (last.role === "tool") return { text: "REPORT: tool evidence gathered" };
 		if (request.lastUser.includes("SLOW")) return { delayMs: 2500, text: "REPORT: slow work done" };
+		if (request.lastUser.includes("FAST")) return { delayMs: 1200, text: "REPORT: fast work done" };
 		if (request.lastUser.includes("use a tool")) return { toolCalls: [{ name: "bash", arguments: { command: "echo evidence" } }] };
 		const remembers = request.messages.some((m) => m.role === "assistant" && contentText(m.content).includes("REPORT: alpha"));
 		if (request.lastUser.includes("Follow-up")) return { text: `REPORT: beta (remembers alpha: ${remembers})` };
 		return { text: "REPORT: alpha" };
 	}
 	if (last.role === "tool") return { text: `PARENT FINAL: ${contentText(last.content).slice(0, 1500)}` };
+	if (request.lastUser === "keep the requester busy") return { delayMs: 3300, text: "PARENT FINAL: unrelated work" };
 	const call = /^CALL (\w+) (\{.*\})\s*$/s.exec(request.lastUser.trim());
 	if (call && last.role === "user") return { toolCalls: [{ name: call[1]!, arguments: JSON.parse(call[2]!) }] };
 	return { text: "ok" };
@@ -193,6 +195,52 @@ try {
 	out = lastToolText(events, "subagent_stop");
 	assert.match(out, /s5 "slow" · stopped/);
 	step("stop aborts an assignment and keeps the subagent");
+
+	// ---- staggered completions while a batch wait is running ------------------
+	for (const mode of ["interrupt", "next"]) {
+		await pi.promptAndSettle(`/subagents notify ${mode}`);
+		await pi.promptAndSettle('CALL subagent_run {"id":"s2","task":"FAST batch job","background":true}');
+		await pi.promptAndSettle('CALL subagent_run {"id":"s5","task":"SLOW batch job","background":true}');
+		const startedWaitingAt = Date.now();
+		const from = pi.events.length;
+		const requestsFrom = h.provider.requests.length;
+		events = await pi.promptAndSettle('CALL subagent_wait {"ids":["s2","s5"]}');
+		out = lastToolText(events, "subagent_wait");
+		assert.match(out, /REPORT: fast work done/);
+		assert.match(out, /REPORT: slow work done/);
+		const fast = record("s2").assignments.at(-1)!;
+		const slow = record("s5").assignments.at(-1)!;
+		assert.ok(startedWaitingAt < fast.endedAt! && fast.endedAt! < slow.endedAt!, "workers finished in order during the wait");
+		assert.ok(fast.collected && slow.collected);
+		assert.equal(h.provider.requests.slice(requestsFrom).filter((r) => !r.system.includes("You are subagent")).length, 2,
+			"the requester only calls the tool and answers, without a follow-up model call");
+		await pi.promptAndSettle("next prompt after collecting the batch");
+		assert.ok(!pi.events.slice(from).some((e) => e.type === "message_end" && e.message?.customType === "pi-subagents"),
+			`${mode}: no stale completion notice during the wait or on the next prompt`);
+	}
+	step("collecting a staggered batch suppresses stale interrupt and next-prompt notices");
+
+	// If the reports weren't collected, both notices should still arrive as one message.
+	for (const mode of ["interrupt", "next"]) {
+		await pi.promptAndSettle(`/subagents notify ${mode}`);
+		await pi.promptAndSettle('CALL subagent_run {"id":"s2","task":"FAST uncollected job","background":true}');
+		await pi.promptAndSettle('CALL subagent_run {"id":"s5","task":"SLOW uncollected job","background":true}');
+		const from = pi.events.length;
+		const isNotice = (e: (typeof pi.events)[number]) =>
+			e.type === "message_end" && e.message?.customType === "pi-subagents" && pi.events.indexOf(e) >= from;
+		await pi.promptAndSettle("keep the requester busy");
+		if (mode === "next") {
+			assert.ok(!pi.events.some(isNotice), "next mode did not wake the requester");
+			await pi.promptAndSettle("next user prompt for uncollected reports");
+		}
+		const notice = await pi.waitFor(isNotice, 10_000, `${mode} batched notice`);
+		await pi.waitFor((e) => e.type === "agent_settled" && pi.events.indexOf(e) > pi.events.indexOf(notice));
+		assert.match(contentText(notice.message.content), /ids \["s2","s5"\]/);
+		assert.equal(pi.events.filter(isNotice).length, 1);
+		assert.ok(record("s2").assignments.at(-1)!.noticed && record("s5").assignments.at(-1)!.noticed);
+	}
+	await pi.promptAndSettle("/subagents notify interrupt");
+	step("uncollected reports still notify the requester, batched in both modes");
 
 	// ---- list ------------------------------------------------------------------
 	events = await pi.promptAndSettle("CALL subagent_list {}");

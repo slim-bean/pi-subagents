@@ -114,11 +114,47 @@ export default function piSubagents(pi: ExtensionAPI) {
 
 	// ---- completion notices -----------------------------------------------
 
-	const tellModel = (lines: string[], interrupt: boolean) => {
-		pi.sendMessage(
-			{ customType: NOTICE_TYPE, content: lines.join("\n"), display: true },
-			interrupt ? { deliverAs: "followUp", triggerTurn: true } : { deliverAs: "nextTurn" },
-		);
+	// Keep candidates here, not in Pi's message queue: a tool can collect a report
+	// between its completion and the next opportunity to notify the model.
+	const pendingNotices = new Map<string, { n: number; summary: string; nextOnly: boolean }>();
+	let noticeFlush: NodeJS.Immediate | undefined;
+
+	const takeNotice = (context: ExtensionContext, atUserPrompt: boolean) => {
+		if (identity || !attached || pendingNotices.size === 0) return;
+		const mode = settings(context).notify;
+		if (mode === "off" || (!atUserPrompt && mode !== "interrupt")) return;
+		const lines: string[] = [];
+		const ids: string[] = [];
+		const me = context.sessionManager.getSessionId();
+		for (const [id, notice] of pendingNotices) {
+			const ref = { cwd: context.cwd, id };
+			const assignment = attached.snapshot(ref)?.assignment;
+			if (!assignment?.outcome || assignment.n !== notice.n || assignment.collected || assignment.noticed || assignment.requester.sessionId !== me) {
+				pendingNotices.delete(id);
+				continue;
+			}
+			if (notice.nextOnly && !atUserPrompt) continue;
+			pendingNotices.delete(id);
+			if (!attached.noticed(ref, notice.n)) continue;
+			lines.push(`Subagent ${notice.summary}.`);
+			ids.push(id);
+		}
+		if (ids.length > 0) {
+			lines.push(`Call subagent_wait with ids ${JSON.stringify(ids)} to read ${ids.length === 1 ? "its report" : "their reports"}.`);
+			return { customType: NOTICE_TYPE, content: lines.join("\n"), display: true };
+		}
+	};
+
+	const scheduleIdleNotice = () => {
+		if (!ctx?.isIdle() || pendingNotices.size === 0 || noticeFlush) return;
+		// Batch completions and let other settled handlers finish. Recheck idle
+		// then: if a new run started meanwhile, don't queue a Pi follow-up.
+		noticeFlush = setImmediate(() => {
+			noticeFlush = undefined;
+			if (!ctx?.isIdle()) return;
+			const message = takeNotice(ctx, false);
+			if (message) pi.sendMessage(message, { triggerTurn: true });
+		});
 	};
 
 	const onEnd = ({ record, assignment, result }: EndEvent) => {
@@ -130,29 +166,22 @@ export default function piSubagents(pi: ExtensionAPI) {
 		// Only the session that asked gets a model-facing notice, and only once.
 		if (identity || assignment.collected) return;
 		if (assignment.requester.sessionId !== ctx.sessionManager.getSessionId()) return;
-		const mode = settings(ctx).notify;
-		if (mode === "off" || !attached.noticed({ cwd: record.cwd, id: record.id }, assignment.n)) return;
-		tellModel(
-			[`Subagent ${summary}.`, `Call subagent_wait with ids ["${result.id}"] to read its report.`],
-			mode === "interrupt",
-		);
+		pendingNotices.set(result.id, { n: assignment.n, summary, nextOnly: false });
+		scheduleIdleNotice();
 	};
 
-	/** Reports that finished while this session was not the active one. */
-	const announceMissed = (context: ExtensionContext, sup: Supervisor) => {
-		if (settings(context).notify === "off") return;
+	/** Recover unannounced reports without waking a session just because it was opened. */
+	const recoverNotices = (context: ExtensionContext, sup: Supervisor) => {
 		const me = context.sessionManager.getSessionId();
-		const lines: string[] = [];
 		for (const snapshot of sup.list(context.cwd)) {
 			const assignment = snapshot.assignment;
 			if (snapshot.state !== "idle" || !assignment?.outcome || !assignment.background) continue;
 			if (assignment.collected || assignment.noticed || assignment.requester.sessionId !== me) continue;
-			if (sup.noticed({ cwd: context.cwd, id: snapshot.id }, assignment.n)) {
-				lines.push(`- ${snapshot.id} "${snapshot.title}": ${outcomeLabel(assignment)}`);
-			}
-		}
-		if (lines.length > 0) {
-			tellModel(["Background subagent assignments finished while this session was away:", ...lines, "Call subagent_wait to read their reports."], false);
+			pendingNotices.set(snapshot.id, {
+				n: assignment.n,
+				summary: `${snapshot.id} "${snapshot.title}" ${outcomeLabel(assignment)} while this session was away`,
+				nextOnly: true,
+			});
 		}
 	};
 
@@ -162,7 +191,7 @@ export default function piSubagents(pi: ExtensionAPI) {
 		const sup = supervisor();
 		sup.configure(settings(context));
 		attach(sup);
-		announceMissed(context, sup);
+		recoverNotices(context, sup);
 		const report = problems.join("\n");
 		if (report && report !== shownProblems && context.hasUI) {
 			shownProblems = report;
@@ -227,8 +256,15 @@ export default function piSubagents(pi: ExtensionAPI) {
 		} else startRequester(context);
 	});
 
-	pi.on("before_agent_start", async (event) => {
-		if (!identity) return;
+	pi.on("agent_settled", scheduleIdleNotice);
+
+	pi.on("before_agent_start", async (event, context) => {
+		if (!identity) {
+			if (event.messageType !== "user") return;
+			const message = takeNotice(context, true);
+			if (message) return { message };
+			return;
+		}
 		// Every session_start handler has run by now, whatever the extension load order.
 		await disableMaintenance();
 		event.systemPromptOptions.sections.subagent = researchInstructions(identity);
@@ -246,6 +282,9 @@ export default function piSubagents(pi: ExtensionAPI) {
 		const context = ctx;
 		ctx = undefined; // Supervisor events during teardown must not touch a dying session.
 		stopTicker();
+		if (noticeFlush) clearImmediate(noticeFlush);
+		noticeFlush = undefined;
+		pendingNotices.clear();
 		detach();
 		if (context?.hasUI) {
 			context.ui.setWidget(WIDGET, undefined);
