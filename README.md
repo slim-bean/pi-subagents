@@ -26,7 +26,7 @@ directory. This is not a sandbox; see [Limits of the design](#limits-of-the-desi
 pi install git:github.com/slim-bean/pi-subagents
 ```
 
-To pin this release, use `git:github.com/slim-bean/pi-subagents@v0.3.0`. Pinned
+To pin this release, use `git:github.com/slim-bean/pi-subagents@v0.3.1`. Pinned
 refs do not move; select a new tag explicitly to upgrade. Run `/reload` in
 already-running sessions. To try it for one run without installing:
 
@@ -40,7 +40,7 @@ one installation source; remove a local-checkout entry before switching to the
 Git install, rather than loading both copies.
 
 Requires Node 22.19+ and macOS or Linux. There are no runtime dependencies and
-no build step. Developed and tested against pi 1.5.2.
+no build step. Developed and tested against pi 1.6.0.
 
 For development, clone the repository, run `npm install`, and register the
 checkout with `pi install .`.
@@ -224,7 +224,9 @@ like your own session files.
 
 - **Not a sandbox.** A subagent has your pi's authority: shell, MCP and browser
   tools are unrestricted, and the research-only rule for those is an instruction.
-  Only `write`/`edit` are confined. Set `"readOnly": false` to lift that.
+  Only `write`/`edit` are confined. A project under the temp directory is still
+  protected; the subagent's own notes directory remains writable. Set
+  `"readOnly": false` to lift that.
 - **Reports are claims.** A cheaper model can be wrong. Reports cite evidence so
   the requester can check; the transcript shows what the subagent actually saw.
 - **No nesting, no agent-to-agent chat, no shared-memory writes** by subagents.

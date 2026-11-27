@@ -38,7 +38,12 @@ export function refusal(toolName: string, input: unknown, cwd: string, identity:
 	const raw = (input as { path?: unknown } | undefined)?.path;
 	if (typeof raw !== "string" || !raw) return undefined; // Let the tool report its own argument error.
 	const target = resolve(cwd, raw);
-	if (writableRoots(identity).some((root) => inside(target, root))) return undefined;
+	// The subagent's own notes remain writable even if its registry is under
+	// the project. But a project hosted under /tmp is still a project: the
+	// broad temp allowance must not exempt all of its source files.
+	if ([identity.dir, real(identity.dir)].some((root) => inside(target, root))) return undefined;
+	const inProject = [resolve(cwd), real(resolve(cwd))].some((root) => inside(target, root));
+	if (!inProject && writableRoots(identity).some((root) => inside(target, root))) return undefined;
 	return (
 		`Subagents are research-only: ${toolName} is limited to ${join(identity.dir, "artifacts")} and the temp directory. ` +
 		"Do not change project files; describe the change in your report instead."
