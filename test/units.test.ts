@@ -351,6 +351,15 @@ test("research-only guard: file tools may write only to the subagent's directory
 	assert.match(check("write", "/reg/s2/../s3/artifacts/x")!, /research-only/, "no escaping through ..");
 	assert.match(check("write", "/reg/s22/x")!, /research-only/, "prefix of a sibling directory does not count");
 	assert.match(check("write", "../outside.txt")!, /research-only/);
+	// A project under the system temp directory is not a scratch exemption.
+	const tempProject = join(tmpdir(), "project-fixture");
+	const tempIdentity = { ...identity, cwd: tempProject, dir: join(tempProject, ".registry", "s2") };
+	for (const tool of ["write", "edit"]) {
+		assert.match(refusal(tool, { path: "src/index.ts" }, tempProject, tempIdentity)!, /research-only/);
+		assert.match(refusal(tool, { path: join(tempProject, "README.md") }, tempProject, tempIdentity)!, /research-only/);
+		assert.equal(refusal(tool, { path: join(tempIdentity.dir, "artifacts", "notes.md") }, tempProject, tempIdentity), undefined);
+		assert.equal(refusal(tool, { path: join(tmpdir(), "scratch.py") }, tempProject, tempIdentity), undefined);
+	}
 	// Other tools, and malformed calls the tool will reject itself, pass through.
 	assert.equal(check("read", "/work/project/README.md"), undefined);
 	assert.equal(check("bash", "anything"), undefined);
